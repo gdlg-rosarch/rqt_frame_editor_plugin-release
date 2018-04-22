@@ -6,7 +6,7 @@ import time
 import rospy
 import tf
 
-from python_qt_binding.QtGui import QUndoCommand
+from python_qt_binding.QtWidgets import QUndoCommand
 
 from constructors_geometry import FromTransformStamped
 from frame_editor.objects import *
@@ -68,7 +68,6 @@ class Command_RemoveElement(QUndoCommand):
             self.editor.add_undo_level(2)
 
         del self.editor.frames[self.element.name]
-        self.element.tf_buffer.clear()
         self.element.hidden = True
         self.editor.add_undo_level(1, [self.element])
 
@@ -152,6 +151,77 @@ class Command_AlignElement(QUndoCommand):
     def undo(self):
         self.element.position = self.old_position
         self.element.orientation = self.old_orientation
+        self.editor.add_undo_level(4, [self.element])
+
+
+class Command_CopyElement(QUndoCommand):
+    '''Copys a source frame's transformation and sets a new parent
+    '''
+
+    def __init__(self, editor, new_name, source_name, parent_name):
+        QUndoCommand.__init__(self, "Rebase")
+        self.editor = editor
+
+        if source_name in self.editor.frames:
+            element = copy.deepcopy(self.editor.frames[source_name])
+            element.name = new_name
+        else:
+            element = Frame(new_name, parent=parent_name)
+        element.parent = parent_name
+
+        # Pose
+        position, orientation = FromTransformStamped(
+            element.tf_buffer.lookup_transform(
+                parent_name, source_name, rospy.Time(0)))
+        element.position = position
+        element.orientation = orientation
+
+        self.element = element
+
+    def redo(self):
+        self.editor.frames[self.element.name] = self.element
+        self.element.hidden = False
+        self.editor.add_undo_level(1, [self.element])
+
+    def undo(self):
+        del self.editor.frames[self.element.name]
+        self.element.hidden = True
+        self.editor.add_undo_level(1, [self.element])
+
+
+
+class Command_RebaseElement(QUndoCommand):
+    '''Copys a source frame's transformation and sets a new parent
+    '''
+
+    def __init__(self, editor, element, source_name, new_parent):
+        QUndoCommand.__init__(self, "Rebase")
+        self.editor = editor
+
+        self.element = element
+
+        self.old_position = element.position
+        self.old_orientation = element.orientation
+
+        self.new_parent = new_parent
+        self.old_parent = element.parent
+
+        # New Pose
+        self.new_position, self.new_orientation = FromTransformStamped(
+            element.tf_buffer.lookup_transform(
+                new_parent, source_name, rospy.Time(0)))
+
+
+    def redo(self):
+        self.element.position = self.new_position
+        self.element.orientation = self.new_orientation
+        self.element.parent = self.new_parent
+        self.editor.add_undo_level(4, [self.element])
+
+    def undo(self):
+        self.element.position = self.old_position
+        self.element.orientation = self.old_orientation
+        self.element.parent = self.old_parent
         self.editor.add_undo_level(4, [self.element])
 
 
@@ -299,6 +369,7 @@ class Command_SetParent(QUndoCommand):
 
         self.editor.add_undo_level(4, [self.element])
 
+
 class Command_SetStyle(QUndoCommand):
 
     def __init__(self, editor, element, style):
@@ -350,6 +421,7 @@ class Command_SetStyle(QUndoCommand):
         if self.was_active:
             self.editor.active_frame = self.old_element
             self.editor.add_undo_level(2)
+
 
 class Command_SetStyleColor(QUndoCommand):
 

@@ -176,6 +176,7 @@ catkin_install_python(PROGRAMS
                       src/frame_editor/interface.py
                       src/frame_editor/interface_tf.py
                       src/frame_editor/project_plugin.py
+                      src/frame_editor/utils_tf.py
                       DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
 install(FILES

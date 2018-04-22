@@ -8,12 +8,11 @@ import rospkg
 import tf
 import actionlib
 
-from qt_gui.plugin import Plugin
 from qt_gui_py_common.worker_thread import WorkerThread
 
-from python_qt_binding import loadUi, QtGui, QtCore
-from python_qt_binding.QtGui import QWidget
-from python_qt_binding.QtCore import Signal, Slot
+from python_qt_binding import loadUi, QtCore, QtWidgets
+from python_qt_binding.QtWidgets import QWidget
+from python_qt_binding.QtCore import Slot
 
 from frame_editor.editor import Frame, FrameEditor
 from frame_editor.commands import *
@@ -80,7 +79,7 @@ class FrameEditorGUI(ProjectPlugin, Interface):
 
 
         ## Undo View
-        #widget.undo_frame.layout().addWidget(QtGui.QUndoView(self.editor.undo_stack))
+        #widget.undo_frame.layout().addWidget(QtWidgets.QUndoView(self.editor.undo_stack))
 
 
         ## Views
@@ -89,11 +88,11 @@ class FrameEditorGUI(ProjectPlugin, Interface):
 
         widget.style_frame.layout().addWidget(self.interface_style.get_widget())
 
-
         ## Connections ##
         ##
         widget.btn_add.clicked.connect(self.btn_add_clicked)
         widget.btn_delete.clicked.connect(self.btn_delete_clicked)
+        widget.btn_duplicate.clicked.connect(self.btn_duplicate_clicked)
         widget.list_frames.currentTextChanged.connect(self.selected_frame_changed)
         widget.btn_refresh.clicked.connect(self.update_tf_list)
 
@@ -232,21 +231,25 @@ class FrameEditorGUI(ProjectPlugin, Interface):
         w.txt_b.setValue(rot[1])
         w.txt_c.setValue(rot[2])
 
+        txt_abs_pos = (w.txt_abs_x, w.txt_abs_y, w.txt_abs_z)
+        txt_abs_rot = (w.txt_abs_a, w.txt_abs_b, w.txt_abs_c)
+
         ## Absolute
-        position, orientation = FromTransformStamped(
-            f.tf_buffer.lookup_transform('world', f.name, rospy.Time(0)))
-        ## TODO, tf is sometimes too slow! values may still be the old ones
-
-        w.txt_abs_x.setValue(position[0])
-        w.txt_abs_y.setValue(position[1])
-        w.txt_abs_z.setValue(position[2])
-
-        rot = tf.transformations.euler_from_quaternion(orientation)
-        if self.widget.btn_deg.isChecked():
-            rot = (180.0*rot[0]/math.pi, 180.0*rot[1]/math.pi, 180.0*rot[2]/math.pi)
-        w.txt_abs_a.setValue(rot[0])
-        w.txt_abs_b.setValue(rot[1])
-        w.txt_abs_c.setValue(rot[2])
+        try:
+            position, orientation = FromTransformStamped(
+                f.tf_buffer.lookup_transform('world', f.name, rospy.Time(0)))
+            for txt, p in zip(txt_abs_pos, position):
+                txt.setEnabled(True)
+                txt.setValue(p)
+            rot = tf.transformations.euler_from_quaternion(orientation)
+            if self.widget.btn_deg.isChecked():
+                rot = map(math.degrees, rot)
+            for txt, r in zip(txt_abs_rot, rot):
+                txt.setEnabled(True)
+                txt.setValue(r)
+        except:
+            for txt in txt_abs_rot + txt_abs_pos:
+                txt.setEnabled(False)
 
         ## Style
         self.widget.combo_style.setCurrentIndex(self.widget.combo_style.findText(f.style))
@@ -276,10 +279,10 @@ class FrameEditorGUI(ProjectPlugin, Interface):
         # Get a unique frame name
         existing_frames = set(self.editor.all_frame_ids())
 
-        name, ok = QtGui.QInputDialog.getText(self.widget, "Add New Frame", "Name:", QtGui.QLineEdit.Normal, "my_frame")
+        name, ok = QtWidgets.QInputDialog.getText(self.widget, "Add New Frame", "Name:", QtWidgets.QLineEdit.Normal, "my_frame");
 
         while ok and name in existing_frames:
-            name, ok = QtGui.QInputDialog.getText(self.widget, "Add New Frame", "Name (must be unique):", QtGui.QLineEdit.Normal, "my_frame")
+            name, ok = QtWidgets.QInputDialog.getText(self.widget, "Add New Frame", "Name (must be unique):", QtWidgets.QLineEdit.Normal, "my_frame")
         if not ok:
             return
 
@@ -287,7 +290,8 @@ class FrameEditorGUI(ProjectPlugin, Interface):
             available_parents = ["world"]
         else:
             available_parents = self.editor.all_frame_ids(include_temp=False)
-        parent, ok = QtGui.QInputDialog.getItem(self.widget, "Add New Frame", "Parent Name:", sorted(available_parents))
+        parent, ok = QtWidgets.QInputDialog.getItem(self.widget, "Add New Frame", "Parent Name:", sorted(available_parents))
+
 
         if not ok or parent == "":
             return
@@ -297,12 +301,34 @@ class FrameEditorGUI(ProjectPlugin, Interface):
 
 
     @Slot(bool)
+    def btn_duplicate_clicked(self, checked):
+        item = self.widget.list_frames.currentItem()
+        if not item:
+            return
+        source_name = item.text()
+        parent_name = self.editor.frames[source_name].parent
+
+        # Get a unique frame name
+        existing_frames = set(self.editor.all_frame_ids())
+
+        name, ok = QtWidgets.QInputDialog.getText(self.widget, "Duplicate Frame", "Name:", QtWidgets.QLineEdit.Normal, source_name);
+
+        while ok and name in existing_frames:
+            name, ok = QtWidgets.QInputDialog.getText(self.widget, "Duplicate Frame", "Name (must be unique):", QtWidgets.QLineEdit.Normal, source_name)
+        if not ok:
+            return
+
+        self.editor.command(Command_CopyElement(self.editor, name, source_name, parent_name))
+
+
+
+    @Slot(bool)
     def btn_delete_clicked(self, checked):
         item = self.widget.list_frames.currentItem()
         if not item:
             return
         self.editor.command(Command_RemoveElement(self.editor, self.editor.frames[item.text()]))
-        
+
 
     ## PARENTING ##
     ##

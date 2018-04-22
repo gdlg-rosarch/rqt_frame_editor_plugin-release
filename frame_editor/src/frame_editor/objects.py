@@ -11,9 +11,12 @@ import tf2_ros
 from frame_editor.constructors_geometry import *
 from frame_editor.constructors_std import *
 from frame_editor.srv import *
+import utils_tf
+
 from geometry_msgs.msg import Pose
 
 from visualization_msgs.msg import InteractiveMarkerControl, Marker
+import rospkg
 
 
 class Frame(object):
@@ -82,6 +85,16 @@ class Frame(object):
             elif symbol == 'c':
                 rpy[2] = value
             self.orientation = tuple(tft.quaternion_from_euler(*rpy))
+
+    @staticmethod
+    def can_transform(target_frame, source_frame, time_):
+        return utils_tf.can_transform(
+            Frame.tf_buffer, target_frame, source_frame, time_)
+
+    @staticmethod
+    def wait_for_transform(target_frame, source_frame, timeout):
+        return utils_tf.wait_for_transform(
+            Frame.tf_buffer, target_frame, source_frame, timeout)
 
 
 class Object_Geometry(Frame):
@@ -182,10 +195,11 @@ class Object_Axis(Object_Geometry):
 
 class Object_Mesh(Object_Geometry):
 
-    def __init__(self, name, position, orientation, parent, mesh_path="", scale=1.0):
+    def __init__(self, name, position, orientation, parent, package=None, mesh_path="", scale=1.0):
 
         self.scale = scale
         self.path = mesh_path
+        self.package = package
 
         super(Object_Mesh, self).__init__(name, position, orientation, parent, "mesh")
 
@@ -193,7 +207,11 @@ class Object_Mesh(Object_Geometry):
         super(Object_Mesh, self).update_marker()
 
         self.marker.type = Marker.MESH_RESOURCE
-        self.marker.mesh_resource = "file:"+self.path
+        if self.package == "" or self.package is None:
+            self.marker.mesh_resource = "file:"+self.path
+        else:
+            self.marker.mesh_resource = "file:"+rospkg.RosPack().get_path(self.package)+"/"+self.path
+
         self.marker.scale = NewVector3(self.scale, self.scale, self.scale)
 
 # eof

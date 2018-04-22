@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import copy
+import time
 
 import rospy
 
@@ -188,33 +189,44 @@ class FrameEditor_Services(Interface):
             response.error_code = 3
 
         else:
-            ## If not existing yet: create frame
-            if request.name not in self.editor.frames:
-                if request.source_name in self.editor.frames:
-                    frame = copy.deepcopy(self.editor.frames[request.source_name])
-                    frame.name = request.name
-                else:
-                    frame = Frame(request.name, parent=request.source_name)
-                self.editor.command(Command_AddElement(self.editor, frame))
-            else:
-                ## Align with source frame
-                frame = self.editor.frames[request.name]
-                frame_tf = frame.tf_buffer.can_transform(request.name, request.source_name, rospy.Time.now(), rospy.Duration(1.0), rospy.Duration(0.01))
-                if not frame_tf:
-                    print " Error: tf can not transform. (Align)"
-                    response.error_code = 4
-                self.editor.command(Command_AlignElement(self.editor, frame, request.source_name, ['x', 'y', 'z', 'a', 'b', 'c']))
+            t = time.time()
 
-            ## Set parent
-            if (request.parent != "") and (frame.parent != request.parent):
-                ## Make sure the listener knows the new frame / its new aligned position
-                self.editor.broadcast() # apparently you can't broadcast often enough
-                frame_tf = frame.tf_buffer.can_transform(frame.parent, frame.name, rospy.Time.now(), rospy.Duration(1.0), rospy.Duration(0.01))
-                new_tf = frame.tf_buffer.can_transform(request.parent, frame.name, rospy.Time.now(), rospy.Duration(1.0), rospy.Duration(0.01))
-                if not (frame_tf and new_tf):
-                    print " Error: tf can not transform."
-                    response.error_code = 4
-                self.editor.command(Command_SetParent(self.editor, frame, request.parent, True))
+            try:
+                # If not existing yet: create frame
+                if request.name not in self.editor.frames:
+                    print ">> add"
+
+                    # No parent specified: use source's parent
+                    if request.parent == "":
+                        if request.source_name in self.editor.frames:
+                            request.parent = self.editor.frames[request.source_name].parent
+                        else:
+                            print " Error: No parent name given"
+                            response.error_code = 3
+                            return response
+
+                    Frame.wait_for_transform(request.source_name, request.parent, rospy.Duration(1.0))
+                    self.editor.command(Command_CopyElement(self.editor, request.name, request.source_name, request.parent))
+                    Frame.wait_for_transform(request.parent, request.name, rospy.Duration(1.0))
+
+
+                else:
+                    frame = self.editor.frames[request.name]
+
+                    if (request.parent != "") and (frame.parent != request.parent):
+                        print ">> rebase"
+                        self.editor.command(Command_RebaseElement(self.editor, frame, request.source_name, request.parent))
+                    else:
+                        print ">> align"
+                        self.editor.command(Command_AlignElement(self.editor, frame, request.source_name, ['x', 'y', 'z', 'a', 'b', 'c']))
+
+                    Frame.wait_for_transform(frame.parent, frame.name, rospy.Duration(1.0))
+
+            except Exception, e:
+                print "Error: unhandled exception", e
+                response.error_code = 9
+
+            print time.time() - t
 
         return response
 

@@ -11,8 +11,6 @@ import rospy
 import rosparam
 import rospkg
 
-import tf
-
 from frame_editor.objects import *
 from frame_editor.commands import *
 
@@ -20,7 +18,7 @@ from frame_editor.constructors_geometry import *
 from frame_editor.constructors_std import *
 
 from python_qt_binding import QtCore
-from python_qt_binding.QtGui import QUndoStack
+from python_qt_binding.QtWidgets import QUndoStack
 
 ## Views
 from frame_editor.interface_interactive_marker import FrameEditor_InteractiveMarker
@@ -72,9 +70,6 @@ class FrameEditor(QtCore.QObject):
             observer.update(self, level, self.undo_elements)
         self.undo_level = 0
         self.undo_elements = []
-
-        ## Just in case: additional broadcast
-        self.broadcast()
 
     def broadcast(self):
         for observer in self.observers:
@@ -156,6 +151,8 @@ class FrameEditor(QtCore.QObject):
                     color = dat["color"]
                 else:
                     color = (0.0, 0.5, 0.5, 0.75)
+                if "package" not in dat:
+                    dat["package"] = ""
 
             position = (t["x"], t["y"], t["z"])
             orientation = (o["x"], o["y"], o["z"], o["w"])
@@ -173,7 +170,7 @@ class FrameEditor(QtCore.QObject):
                 f = Object_Axis(name, position, orientation, frame["parent"], dat["length"], dat["width"])
                 f.set_color(color)
             elif style == "mesh":
-                f = Object_Mesh(name, position, orientation, frame["parent"], dat["path"], dat["scale"])
+                f = Object_Mesh(name, position, orientation, frame["parent"], dat["package"], dat["path"], dat["scale"])
                 f.set_color(color)
             else:
                 f = Frame(name, position, orientation, frame["parent"])
@@ -222,7 +219,8 @@ class FrameEditor(QtCore.QObject):
                 f["data"] = { "length": frame.length, "width": frame.width, "color": frame.color }
 
             elif frame.style == "mesh":
-                f["data"] = { "path" : frame.path, "scale" : frame.scale, "color": frame.color }
+                self.update_file_format(frame)
+                f["data"] = { "package" : frame.package, "path" : frame.path, "scale" : frame.scale, "color": frame.color }
 
             frames[frame.name] = f
 
@@ -239,6 +237,36 @@ class FrameEditor(QtCore.QObject):
 
         return True
 
+    def update_file_format(self, frame):
+        if frame.package == "" and frame.path != "":
+            try:
+                import rospkg
+                import os
+                from python_qt_binding import QtWidgets
+                rospackage = rospkg.get_package_name(frame.path)
+                if rospackage is not None:
+                    rel_path = os.path.relpath(frame.path , rospkg.RosPack().get_path(rospackage))
+                    reply = QtWidgets.QMessageBox.question(None, "Convert absolute path to rospack+relative path?",
+                    "The absolute path to your selected mesh can be converted to rospack+relative path."+
+                    "This gives you more reliabilaty to reuse your saved configuration"+
+                    "if your meshes are stored in rospackages\n\n"+
+                    "Do you want to convert your configuration?\n"+
+                    "Convert:\n'{}'\nto:\n'{}' and\n '{}'\n".format(frame.path, rospackage, rel_path),
+                    QtWidgets.QMessageBox.Yes |
+                    QtWidgets.QMessageBox.No,
+                    QtWidgets.QMessageBox.Yes)
+
+                    if reply == QtWidgets.QMessageBox.Yes:
+                        print "Saving: package:", rospackage, "+ relative path:", rel_path
+                        frame.package = rospackage
+                        frame.path = rel_path
+                        return
+            except:
+                # Do nothing if conversion fails
+                pass
+        else:
+            # Do nothing if conversion not needed
+            pass
 
     def run(self):
         print "> Going for some spins"

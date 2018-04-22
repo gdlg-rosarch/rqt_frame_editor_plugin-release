@@ -2,10 +2,10 @@
 
 from python_qt_binding.QtCore import QObject
 
-class Interface(object):
+class Interface(QObject):
 
     def __init__(self, frame_editor):
-        pass
+        super(QObject, self).__init__()
 
     def update(self, editor, level, elements):
         pass

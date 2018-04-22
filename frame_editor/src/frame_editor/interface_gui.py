@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 
-from python_qt_binding import loadUi, QtGui, QtCore
-from python_qt_binding.QtGui import QWidget, QPushButton
-from python_qt_binding.QtCore import Signal, Slot
-
+from python_qt_binding import QtWidgets, QtCore
+from python_qt_binding.QtWidgets import QWidget, QPushButton, QColorDialog
+from python_qt_binding.QtCore import Slot
+from python_qt_binding.QtGui import QColor
 
 from frame_editor.commands import *
 
 from frame_editor.interface import Interface
-
+import rospkg
+import os
 
 class FrameEditor_StyleWidget(Interface):
 
@@ -18,36 +19,36 @@ class FrameEditor_StyleWidget(Interface):
 
         self.old_frame = None
 
-        self.layout = QtGui.QGridLayout()
+        self.layout = QtWidgets.QGridLayout()
         self.widget = QWidget()
         self.widget.setLayout(self.layout)
 
-        self.mesh_label = QtGui.QLineEdit("File:")
-        self.mesh_label.setSizePolicy(QtGui.QSizePolicy.Ignored, QtGui.QSizePolicy.Fixed)
-        self.mesh_button = QtGui.QPushButton("Open")
-        self.mesh_button.clicked.connect(self.btn_open_mesh_clicked)
+        self.mesh_label = QtWidgets.QLineEdit("File:")
+        self.mesh_label.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Fixed)
+        self.mesh_button = QtWidgets.QPushButton("Open")
+        self.mesh_button.clicked.connect(lambda: self.btn_open_mesh_clicked())
 
-        self.diameter_label = QtGui.QLabel("Diameter:")
-        self.diameter_spinbox = QtGui.QDoubleSpinBox()
-        self.diameter_spinbox.editingFinished.connect(self.diameter_changed)
+        self.diameter_label = QtWidgets.QLabel("Diameter:")
+        self.diameter_spinbox = QtWidgets.QDoubleSpinBox()
+        self.diameter_spinbox.editingFinished.connect(lambda: self.diameter_changed())
 
-        self.length_label = QtGui.QLabel("Length:")
-        self.length_spinbox = QtGui.QDoubleSpinBox()
-        self.length_spinbox.editingFinished.connect(self.length_changed)
+        self.length_label = QtWidgets.QLabel("Length:")
+        self.length_spinbox = QtWidgets.QDoubleSpinBox()
+        self.length_spinbox.editingFinished.connect(lambda: self.length_changed())
 
-        self.width_label = QtGui.QLabel("Width:")
-        self.width_spinbox = QtGui.QDoubleSpinBox()
-        self.width_spinbox.editingFinished.connect(self.width_changed)
+        self.width_label = QtWidgets.QLabel("Width:")
+        self.width_spinbox = QtWidgets.QDoubleSpinBox()
+        self.width_spinbox.editingFinished.connect(lambda: self.width_changed())
 
-        self.height_label = QtGui.QLabel("Height:")
-        self.height_spinbox = QtGui.QDoubleSpinBox()
-        self.height_spinbox.editingFinished.connect(self.height_changed)
+        self.height_label = QtWidgets.QLabel("Height:")
+        self.height_spinbox = QtWidgets.QDoubleSpinBox()
+        self.height_spinbox.editingFinished.connect(lambda: self.height_changed())
 
-        self.color_label = QtGui.QLabel()
+        self.color_label = QtWidgets.QLabel()
         self.color_label.setAutoFillBackground(True)
         self.update_color_label(None)
-        self.color_button = QtGui.QPushButton("Set Color")
-        self.color_button.clicked.connect(self.btn_color_clicked)
+        self.color_button = QtWidgets.QPushButton("Set Color")
+        self.color_button.clicked.connect(lambda: self.btn_color_clicked())
 
         self.layout.addWidget(self.mesh_label, 0, 0)
         self.layout.addWidget(self.mesh_button, 0, 1)
@@ -62,8 +63,8 @@ class FrameEditor_StyleWidget(Interface):
         self.layout.addWidget(self.color_label, 5, 0)
         self.layout.addWidget(self.color_button, 5, 1)
 
+        print "init"
         self.update_widget(None)
-
 
     def get_widget(self):
         return self.widget
@@ -83,7 +84,6 @@ class FrameEditor_StyleWidget(Interface):
             self.update_color_label(self.editor.active_frame)
     
     def update_widget(self, frame):
-
         ## Clear layout
         #while self.layout.count():
         #    child = self.layout.takeAt(0)
@@ -162,16 +162,41 @@ class FrameEditor_StyleWidget(Interface):
         if self.editor.active_frame.height != self.height_spinbox.value():
             self.editor.command(Command_SetGeometry(self.editor, self.editor.active_frame, "height", self.height_spinbox.value()))
 
-    @Slot()
+    @Slot(bool)
     def btn_open_mesh_clicked(self):
-        path = QtGui.QFileDialog.getOpenFileName(None, 'Open Mesh', '/home', 'Mesh Files (*.stl *.dae)')[0]
-        self.editor.command(Command_SetGeometry(self.editor, self.editor.active_frame, "path", path))
-
+        path = QtWidgets.QFileDialog.getOpenFileName(None, 'Open Mesh', '/home', 'Mesh Files (*.stl)')[0]
+        try:
+            rospackage = rospkg.get_package_name(path)
+            if rospackage is None:
+                QtWidgets.QMessageBox.warning(self.widget, "Saving absolute path to mesh",
+                "Cannot find rospackage with selected mesh in it!\nSaving absolute path to mesh instead!")
+                #print "WARNING cannot find rospackage with mesh in it, saving absolute path"
+                self.editor.command(Command_SetGeometry(self.editor, self.editor.active_frame, "package", ""))
+                self.editor.command(Command_SetGeometry(self.editor, self.editor.active_frame, "path", path))
+            else:
+                rel_path = os.path.relpath(path , rospkg.RosPack().get_path(rospackage))
+                print "Saving: package:", rospackage, "+ relative path:", rel_path
+                self.editor.command(Command_SetGeometry(self.editor, self.editor.active_frame, "package", rospackage))
+                self.editor.command(Command_SetGeometry(self.editor, self.editor.active_frame, "path", rel_path))
+        except:
+            QtWidgets.QMessageBox.warning(self.widget, "Saving absolute path to mesh",
+            "The found rospackage with selected mesh in it is not sourced in your ROS workspace!\n"+
+            "Cannot resolve the packagepath\nSaving absolute path to mesh instead!")
+            #print "The package found is not sourced withing the current workspace, saving absolute path instead!"
+            self.editor.command(Command_SetGeometry(self.editor, self.editor.active_frame, "package", ""))
+            self.editor.command(Command_SetGeometry(self.editor, self.editor.active_frame, "path", path))
 
     @Slot(bool)
-    def btn_color_clicked(self, checked):
+    def btn_color_clicked(self):
         frame = self.editor.active_frame
-        color = QtGui.QColorDialog.getColor(QtGui.QColor(frame.color[0]*255, frame.color[1]*255, frame.color[2]*255, frame.color[3]*255), None, "Select Color", options=QtGui.QColorDialog.ShowAlphaChannel)
+        color = QtWidgets.QColorDialog.getColor(
+            QColor(frame.color[0]*255, 
+            frame.color[1]*255,
+            frame.color[2]*255,
+            frame.color[3]*255),
+            None,
+            "Select Color",
+            options=QtWidgets.QColorDialog.ShowAlphaChannel)
         self.editor.command(Command_SetStyleColor(self.editor, frame, color.getRgbF()))
 
 # eof
